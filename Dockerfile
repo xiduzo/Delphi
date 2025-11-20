@@ -6,8 +6,8 @@
 #
 # Environment variables:
 #   - DATASET: Dataset name (default: ukb_simulated_data)
-#   - MAX_ITERS: Maximum training iterations (default: 1500)
-#   - EVAL_INTERVAL: Evaluation interval (default: 2000)
+#   - MAX_ITERS: Maximum training iterations (default: 1000)
+#   - EVAL_INTERVAL: Evaluation interval, should be smaller than MAX_ITERS (default: 100)
 #   - API_PORT: API server port (default: 8888)
 
 FROM python:3.10-slim
@@ -44,6 +44,9 @@ RUN pip install --no-cache-dir --upgrade pip && \
 # Copy the entire project
 COPY --chown=delphi:delphi . .
 
+# Create necessary directories
+RUN mkdir -p out && chown -R delphi:delphi out
+
 # Create startup script
 RUN cat > /app/start-api.sh << 'EOFSCRIPT' && chmod +x /app/start-api.sh
 #!/bin/bash
@@ -57,25 +60,21 @@ echo "=========================================="
 if [ ! -f "out/ckpt.pt" ]; then
     echo "No checkpoint found. Starting training..."
     echo "Using dataset: ${DATASET:-ukb_simulated_data}"
-    echo "Max iterations: ${MAX_ITERS:-1500}"
-    echo "Eval interval: ${EVAL_INTERVAL:-2000}"
+    echo "Max iterations: ${MAX_ITERS:-1000}"
+    echo "Eval interval: ${EVAL_INTERVAL:-100}"
     
     if python train.py \
         --out_dir=out \
         --dataset=${DATASET:-ukb_simulated_data} \
-        --max_iters=${MAX_ITERS:-1500} \
-        --eval_interval=${EVAL_INTERVAL:-2000}; then
+        --max_iters=${MAX_ITERS:-1000} \
+        --eval_interval=${EVAL_INTERVAL:-100}; then
         echo "✓ Training completed successfully."
         
         # Ensure checkpoint is in delphi/ directory
         if [ -f "out/ckpt.pt" ]; then
             echo "✓ Checkpoint ready at out/ckpt.pt"
-        elif [ -f "delphi/ckpt.pt" ]; then
-            echo "Moving checkpoint from delphi/ to out/"
-            cp delphi/ckpt.pt out/ckpt.pt
-            echo "✓ Checkpoint moved successfully"
         else
-            echo "ERROR: Checkpoint not found after training!"
+            echo "ERROR: Checkpoint not found at out/ckpt.pt"
             exit 1
         fi
     else
