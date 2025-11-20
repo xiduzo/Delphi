@@ -85,7 +85,7 @@ def load_model_and_mappings():
     if not os.path.isfile(ckpt_path):
         raise RuntimeError(f"Checkpoint not found at {ckpt_path}")
 
-    checkpoint = torch.load(ckpt_path, map_location=device)
+    checkpoint = torch.load(ckpt_path, map_location=device, weights_only=False)
     gptconf = DelphiConfig(**checkpoint["model_args"])  # type: ignore
     model = Delphi(gptconf)
     model.load_state_dict(checkpoint["model"])  # type: ignore

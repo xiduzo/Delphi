@@ -75,8 +75,17 @@ config = {k: globals()[k] for k in config_keys}  # will be useful for logging
 
 os.makedirs(out_dir, exist_ok=True)
 torch.manual_seed(seed)
-torch.backends.cuda.matmul.fp32_precision = 'tf32'
-torch.backends.cudnn.conv.fp32_precision = 'tf32'
+# Set fp32 precision if available (not all PyTorch versions support this)
+try:
+    torch.backends.cuda.matmul.allow_tf32 = True
+    torch.backends.cudnn.allow_tf32 = True
+except AttributeError:
+    # Fallback for older PyTorch versions
+    try:
+        torch.backends.cuda.matmul.fp32_precision = 'tf32'
+        torch.backends.cudnn.conv.fp32_precision = 'tf32'
+    except AttributeError:
+        pass  # Ignore if not supported
 device_type = 'cuda' if 'cuda' in device else 'cpu'  # for later use in torch.autocast
 # note: float16 data type will automatically use a GradScaler
 ptdtype = {'float32': torch.float32, 'float64': torch.float64,
@@ -90,12 +99,34 @@ data_dir = os.path.join('data', dataset)
 train_data = np.memmap(os.path.join(data_dir, 'train.bin'), dtype=np.uint32, mode='r').reshape(-1, 3)
 val_data = np.memmap(os.path.join(data_dir, 'val.bin'), dtype=np.uint32, mode='r').reshape(-1, 3)
 
+# Try to load vocab_size from meta.pkl if it exists
+meta_path = os.path.join(data_dir, 'meta.pkl')
+if os.path.exists(meta_path):
+    with open(meta_path, 'rb') as f:
+        meta = pickle.load(f)
+        if 'vocab_size' in meta:
+            detected_vocab_size = meta['vocab_size']
+            if vocab_size < detected_vocab_size:
+                print(f"Found vocab_size={detected_vocab_size} in meta.pkl")
+                print(f"Auto-adjusting vocab_size from {vocab_size} to {detected_vocab_size}")
+                vocab_size = detected_vocab_size
+
 train_p2i = get_p2i(train_data)
 val_p2i = get_p2i(val_data)
 
 # downsample the data to requested fraction
 if data_fraction < 1.0:
     train_p2i = train_p2i[:int(data_fraction * len(train_p2i))]
+
+# Auto-detect vocab_size from data if still too small
+# Data format: [patient_id, age_days, token_id]
+# vocab_size should be max(token_id) + 2 (for padding and no_event tokens)
+max_token_id = max(train_data[:, 2].max(), val_data[:, 2].max())
+detected_vocab_size = int(max_token_id) + 2
+if vocab_size < detected_vocab_size:
+    print(f"WARNING: vocab_size={vocab_size} is smaller than detected max token ID {max_token_id}")
+    print(f"Auto-adjusting vocab_size from {vocab_size} to {detected_vocab_size}")
+    vocab_size = detected_vocab_size
 
 # init these up here, can override if init_from='resume' (i.e. from a checkpoint)
 iter_num = 0
