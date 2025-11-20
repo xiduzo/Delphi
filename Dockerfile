@@ -44,10 +44,6 @@ RUN pip install --no-cache-dir --upgrade pip && \
 # Copy the entire project
 COPY --chown=delphi:delphi . .
 
-# Create necessary directories
-RUN mkdir -p out delphi data/ukb_simulated_data && \
-    chown -R delphi:delphi out delphi data
-
 # Create startup script
 RUN cat > /app/start-api.sh << 'EOFSCRIPT' && chmod +x /app/start-api.sh
 #!/bin/bash
@@ -121,7 +117,7 @@ USER delphi
 EXPOSE 8888
 
 # Health check (uses default port 8888)
-HEALTHCHECK --interval=30s --timeout=10s --start-period=60s --retries=3 \
+HEALTHCHECK --interval=30s --timeout=10s --start-period=15m --retries=3 \
     CMD curl -f http://localhost:8888/health || exit 1
 
 # Default command: train (if needed) and start API
