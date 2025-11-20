@@ -26,6 +26,12 @@ class PatientEvent(BaseModel):
 class PredictRequest(BaseModel):
     """Request body for prediction endpoint."""
     patient: List[PatientEvent] = Field(..., description="List of patient events (ICD10 codes with ages)")
+    timeframe_years: Optional[float] = Field(
+        None,
+        description="Timeframe in years for predictions (e.g., 5.0 for next 5 years). If not provided, predictions are for the immediate next event.",
+        ge=0.0,
+        example=5.0
+    )
 
 
 class RankedPrediction(BaseModel):
@@ -64,14 +70,35 @@ app = FastAPI(
     redoc_url="/api/redoc",
 )
 
-# CORS configuration to allow frontend requests during local development
-app.add_middleware(
-    CORSMiddleware,
-    allow_origins=[
+# CORS configuration to allow frontend requests
+# Default: allow common development origins. Can be overridden via CORS_ORIGINS env var
+# Set CORS_ORIGINS="*" to allow all origins (credentials will be disabled in that case)
+cors_origins_env = os.getenv("CORS_ORIGINS")
+if cors_origins_env:
+    if cors_origins_env.strip() == "*":
+        allowed_origins = ["*"]
+        allow_credentials = False
+    else:
+        allowed_origins = [origin.strip() for origin in cors_origins_env.split(",")]
+        allow_credentials = True
+else:
+    # Default: allow common development ports
+    allowed_origins = [
         "http://localhost:3000",
         "http://127.0.0.1:3000",
-    ],
-    allow_credentials=True,
+        "http://localhost:3001",
+        "http://127.0.0.1:3001",
+        "http://localhost:8080",
+        "http://127.0.0.1:8080",
+        "http://localhost:5173",  # Vite default
+        "http://127.0.0.1:5173",
+    ]
+    allow_credentials = True
+
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=allowed_origins,
+    allow_credentials=allow_credentials,
     allow_methods=["*"],
     allow_headers=["*"],
 )
@@ -170,7 +197,7 @@ def health() -> HealthResponse:
     response_model=PredictResponse,
     status_code=status.HTTP_200_OK,
     summary="Predict future conditions",
-    description="Predict the top 10 most likely future medical conditions based on a patient's history of ICD10 codes and ages",
+    description="Predict the top 10 most likely future medical conditions based on a patient's history of ICD10 codes and ages. Optionally specify a timeframe in years to get predictions for events within that period.",
     tags=["Prediction"],
     responses={
         200: {
@@ -211,10 +238,34 @@ def predict(req: PredictRequest) -> PredictResponse:
     ages = ages.unsqueeze(0).to(device)
 
     with torch.no_grad():
-        logits, _, _ = model(tokens, ages)
+        # If timeframe is specified, use generate method to get predictions within that timeframe
+        if req.timeframe_years is not None and req.timeframe_years > 0:
+            # Calculate max_age: current patient age + timeframe
+            current_age_days = ages[0, -1].item()  # Last age in days
+            max_age_days = current_age_days + (req.timeframe_years * 365.25)
+            
+            # Use generate to get predictions within the timeframe
+            # Generate a trajectory up to max_age, then extract probabilities
+            generated_idx, generated_age, generated_logits = model.generate(
+                tokens,
+                ages,
+                max_new_tokens=100,  # Generate up to 100 new events
+                max_age=max_age_days,
+                no_repeat=True,
+                termination_tokens=None,
+                top_k=None
+            )
+            
+            # Get probabilities from the final logits of the generated sequence
+            # Average across all positions in the generated sequence to get aggregate probabilities
+            final_logits = generated_logits[:, -1, :].squeeze()
+            probs = torch.softmax(final_logits, dim=-1)
+        else:
+            # Default behavior: single forward pass for immediate next event
+            logits, _, _ = model(tokens, ages)
+            last_logits = logits[:, -1, :].squeeze()
+            probs = torch.softmax(last_logits, dim=-1)
 
-    last_logits = logits[:, -1, :].squeeze()
-    probs = torch.softmax(last_logits, dim=-1)
     probs_list = probs.tolist()
     sorted_indices = sorted(range(len(probs_list)), key=lambda i: probs_list[i], reverse=True)
 

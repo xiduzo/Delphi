@@ -34,6 +34,7 @@ export async function fetchCodes(): Promise<CodeItem[]> {
 
 export async function postPredict(body: {
   patient: PatientEvent[];
+  timeframe_years?: number;
 }): Promise<PredictResponse> {
   const res = await fetch(`${BASE_URL}/predict`, {
     method: "POST",
