@@ -6,7 +6,7 @@
 #
 # Environment variables:
 #   - DATASET: Dataset name (default: ukb_simulated_data)
-#   - MAX_ITERS: Maximum training iterations (default: 2000)
+#   - MAX_ITERS: Maximum training iterations (default: 1500)
 #   - EVAL_INTERVAL: Evaluation interval (default: 2000)
 #   - API_PORT: API server port (default: 8888)
 
@@ -57,21 +57,19 @@ echo "=========================================="
 if [ ! -f "out/ckpt.pt" ]; then
     echo "No checkpoint found. Starting training..."
     echo "Using dataset: ${DATASET:-ukb_simulated_data}"
-    echo "Max iterations: ${MAX_ITERS:-2000}"
+    echo "Max iterations: ${MAX_ITERS:-1500}"
     echo "Eval interval: ${EVAL_INTERVAL:-2000}"
     
     if python train.py \
         --out_dir=out \
         --dataset=${DATASET:-ukb_simulated_data} \
-        --max_iters=${MAX_ITERS:-2000} \
+        --max_iters=${MAX_ITERS:-1500} \
         --eval_interval=${EVAL_INTERVAL:-2000}; then
         echo "✓ Training completed successfully."
         
         # Ensure checkpoint is in delphi/ directory
         if [ -f "out/ckpt.pt" ]; then
-            echo "Moving checkpoint from out/ to delphi/"
-            cp out/ckpt.pt delphi/ckpt.pt
-            echo "✓ Checkpoint moved successfully"
+            echo "✓ Checkpoint ready at out/ckpt.pt"
         elif [ -f "delphi/ckpt.pt" ]; then
             echo "Moving checkpoint from delphi/ to out/"
             cp delphi/ckpt.pt out/ckpt.pt
