@@ -7,7 +7,7 @@
 # Environment variables:
 #   - DATASET: Dataset name (default: ukb_simulated_data)
 #   - MAX_ITERS: Maximum training iterations (default: 1000)
-#   - EVAL_INTERVAL: Evaluation interval, should be smaller than MAX_ITERS (default: 100)
+#   - EVAL_INTERVAL: Evaluation interval, should be smaller than MAX_ITERS (default: 250)
 #   - API_PORT: API server port (default: 8888)
 
 FROM python:3.10-slim
@@ -61,13 +61,13 @@ if [ ! -f "out/ckpt.pt" ]; then
     echo "No checkpoint found. Starting training..."
     echo "Using dataset: ${DATASET:-ukb_simulated_data}"
     echo "Max iterations: ${MAX_ITERS:-1000}"
-    echo "Eval interval: ${EVAL_INTERVAL:-100}"
+    echo "Eval interval: ${EVAL_INTERVAL:-250}"
     
     if python train.py \
         --out_dir=out \
         --dataset=${DATASET:-ukb_simulated_data} \
         --max_iters=${MAX_ITERS:-1000} \
-        --eval_interval=${EVAL_INTERVAL:-100}; then
+        --eval_interval=${EVAL_INTERVAL:-250}; then
         echo "✓ Training completed successfully."
         
         # Ensure checkpoint is in delphi/ directory
