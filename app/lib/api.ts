@@ -20,7 +20,8 @@ export type PredictResponse = {
   warnings: string[];
 };
 
-const BASE_URL = "http://localhost:8000";
+// Use environment variable for API URL, fallback to localhost for development
+const BASE_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8888";
 
 export async function fetchCodes(): Promise<CodeItem[]> {
   const res = await fetch(`${BASE_URL}/codes`, {
@@ -34,6 +35,7 @@ export async function fetchCodes(): Promise<CodeItem[]> {
 
 export async function postPredict(body: {
   patient: PatientEvent[];
+  timeframe_years?: number;
 }): Promise<PredictResponse> {
   const res = await fetch(`${BASE_URL}/predict`, {
     method: "POST",
