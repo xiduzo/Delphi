@@ -58,25 +58,27 @@ echo "Delphi API Service Starting..."
 echo "=========================================="
 
 # Check if checkpoint exists, if not, train the model
-if [ ! -f "delphi/ckpt.pt" ]; then
+if [ ! -f "out/ckpt.pt" ]; then
     echo "No checkpoint found. Starting training..."
     echo "Using dataset: ${DATASET:-ukb_simulated_data}"
     echo "Max iterations: ${MAX_ITERS:-2000}"
     echo "Eval interval: ${EVAL_INTERVAL:-2000}"
     
     if python train.py \
-        --out_dir=delphi \
+        --out_dir=out \
         --dataset=${DATASET:-ukb_simulated_data} \
         --max_iters=${MAX_ITERS:-2000} \
         --eval_interval=${EVAL_INTERVAL:-2000}; then
         echo "✓ Training completed successfully."
         
         # Ensure checkpoint is in delphi/ directory
-        if [ -f "delphi/ckpt.pt" ]; then
-            echo "✓ Checkpoint found at delphi/ckpt.pt"
-        elif [ -f "out/ckpt.pt" ]; then
+        if [ -f "out/ckpt.pt" ]; then
             echo "Moving checkpoint from out/ to delphi/"
             cp out/ckpt.pt delphi/ckpt.pt
+            echo "✓ Checkpoint moved successfully"
+        elif [ -f "delphi/ckpt.pt" ]; then
+            echo "Moving checkpoint from delphi/ to out/"
+            cp delphi/ckpt.pt out/ckpt.pt
             echo "✓ Checkpoint moved successfully"
         else
             echo "ERROR: Checkpoint not found after training!"
@@ -87,12 +89,12 @@ if [ ! -f "delphi/ckpt.pt" ]; then
         exit 1
     fi
 else
-    echo "✓ Checkpoint found at delphi/ckpt.pt. Skipping training."
+    echo "✓ Checkpoint found at out/ckpt.pt. Skipping training."
 fi
 
 # Verify required files exist
-if [ ! -f "delphi/ckpt.pt" ]; then
-    echo "ERROR: Checkpoint file not found at delphi/ckpt.pt"
+if [ ! -f "out/ckpt.pt" ]; then
+    echo "ERROR: Checkpoint file not found at out/ckpt.pt"
     exit 1
 fi
 

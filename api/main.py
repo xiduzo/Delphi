@@ -118,7 +118,7 @@ def extract_label_text(raw_text: str) -> str:
 @app.on_event("startup")
 def load_model_and_mappings():
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-    ckpt_path = os.path.join(REPO_ROOT, "delphi", "ckpt.pt")
+    ckpt_path = os.path.join(REPO_ROOT, "out", "ckpt.pt")
     if not os.path.isfile(ckpt_path):
         raise RuntimeError(f"Checkpoint not found at {ckpt_path}")
 
