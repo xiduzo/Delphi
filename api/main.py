@@ -4,8 +4,9 @@ import sys
 from typing import List, Optional, Dict, Any
 
 import torch
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, status
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import JSONResponse
 from pydantic import BaseModel, Field
 
 # Ensure repo root is importable
@@ -17,15 +18,51 @@ from model import Delphi, DelphiConfig  # noqa: E402
 
 
 class PatientEvent(BaseModel):
-    code: str = Field(..., description="ICD10 code, e.g. 'I10'")
-    age_at_event: float = Field(..., description="Age in years at the event")
+    """A single patient event with an ICD10 code and age."""
+    code: str = Field(..., description="ICD10 code, e.g. 'I10'", example="I10")
+    age_at_event: float = Field(..., description="Age in years at the event", example=45.5)
 
 
 class PredictRequest(BaseModel):
-    patient: List[PatientEvent]
+    """Request body for prediction endpoint."""
+    patient: List[PatientEvent] = Field(..., description="List of patient events (ICD10 codes with ages)")
 
 
-app = FastAPI(title="Delphi Inference API")
+class RankedPrediction(BaseModel):
+    """A single ranked prediction result."""
+    index: int = Field(..., description="Index of the prediction in the model output")
+    code: Optional[str] = Field(None, description="ICD10 code if available")
+    label: Optional[str] = Field(None, description="Human-readable label for the condition")
+    probability: float = Field(..., description="Predicted probability (0.0 to 1.0)", ge=0.0, le=1.0)
+
+
+class PredictResponse(BaseModel):
+    """Response from the prediction endpoint."""
+    ranked: List[RankedPrediction] = Field(..., description="Top 10 ranked predictions")
+    used_patient: List[PatientEvent] = Field(..., description="Patient events that were actually used (after filtering)")
+    warnings: List[str] = Field(default_factory=list, description="Any warnings about the input data")
+
+
+class CodeInfo(BaseModel):
+    """Information about a single ICD10 code."""
+    index: int = Field(..., description="Index of the code in the model")
+    code: str = Field(..., description="ICD10 code")
+    label: str = Field(..., description="Human-readable label for the condition")
+
+
+class HealthResponse(BaseModel):
+    """Health check response."""
+    status: str = Field(..., description="Service status", example="ok")
+
+
+app = FastAPI(
+    title="Delphi Inference API",
+    description="API for predicting future medical conditions using the Delphi model based on patient history",
+    version="1.0.0",
+    openapi_url="/api/openapi.json",
+    docs_url="/api/docs",
+    redoc_url="/api/redoc",
+)
 
 # CORS configuration to allow frontend requests during local development
 app.add_middleware(
@@ -115,13 +152,40 @@ def load_model_and_mappings():
     STATE["index_to_code"] = index_to_code
 
 
-@app.get("/health")
-def health() -> Dict[str, str]:
-    return {"status": "ok"}
+@app.get(
+    "/health",
+    response_model=HealthResponse,
+    status_code=status.HTTP_200_OK,
+    summary="Health check",
+    description="Check if the API service is running and healthy",
+    tags=["Health"],
+)
+def health() -> HealthResponse:
+    """Health check endpoint to verify the API is operational."""
+    return HealthResponse(status="ok")
 
 
-@app.post("/predict")
-def predict(req: PredictRequest):
+@app.post(
+    "/predict",
+    response_model=PredictResponse,
+    status_code=status.HTTP_200_OK,
+    summary="Predict future conditions",
+    description="Predict the top 10 most likely future medical conditions based on a patient's history of ICD10 codes and ages",
+    tags=["Prediction"],
+    responses={
+        200: {
+            "description": "Successful prediction",
+            "model": PredictResponse,
+        },
+        400: {
+            "description": "Bad request - no valid ICD10 codes after filtering",
+        },
+        503: {
+            "description": "Service unavailable - model not loaded",
+        },
+    },
+)
+def predict(req: PredictRequest) -> PredictResponse:
     model: Optional[Delphi] = STATE.get("model")
     device = STATE.get("device")
     code_to_index: Dict[str, int] = STATE.get("code_to_index") or {}
@@ -166,14 +230,30 @@ def predict(req: PredictRequest):
             "probability": float(probs_list[i]),
         })
 
-    return {
-        "ranked": ranked[:10],
-        "used_patient": [{"code": c, "age_at_event": a} for c, a in filtered],
-        "warnings": warnings,
-    }
+    return PredictResponse(
+        ranked=[RankedPrediction(**item) for item in ranked[:10]],
+        used_patient=[PatientEvent(code=c, age_at_event=a) for c, a in filtered],
+        warnings=warnings,
+    )
 
-@app.get("/codes")
-def list_codes():
+@app.get(
+    "/codes",
+    response_model=List[CodeInfo],
+    status_code=status.HTTP_200_OK,
+    summary="List available ICD10 codes",
+    description="Get a list of all available ICD10 codes that the model can predict",
+    tags=["Codes"],
+    responses={
+        200: {
+            "description": "List of available ICD10 codes",
+            "model": List[CodeInfo],
+        },
+        503: {
+            "description": "Service unavailable - labels not loaded",
+        },
+    },
+)
+def list_codes() -> List[CodeInfo]:
     labels_dict: Dict[int, str] = STATE.get("labels_dict") or {}
     if not labels_dict:
         raise HTTPException(status_code=503, detail="Labels not loaded")
@@ -187,11 +267,23 @@ def list_codes():
             continue
         code = m.group(1)
         label_text = extract_label_text(text)
-        items.append({
-            "index": i,
-            "code": code,
-            "label": label_text,
-        })
+        items.append(CodeInfo(
+            index=i,
+            code=code,
+            label=label_text,
+        ))
     return items
+
+
+@app.get(
+    "/api",
+    response_class=JSONResponse,
+    summary="OpenAPI specification",
+    description="Get the OpenAPI 3.0 specification for this API",
+    tags=["Documentation"],
+)
+def get_openapi_spec() -> Dict[str, Any]:
+    """Return the OpenAPI specification as JSON."""
+    return app.openapi()
 
 
